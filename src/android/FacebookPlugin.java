@@ -2,6 +2,7 @@ package com.schinkowitch.cordova.facebook;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.ArrayList;
 
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.CordovaPlugin;
@@ -74,29 +75,6 @@ public class FacebookPlugin extends CordovaPlugin {
 		callbackContext.success();
 	}
 
-/*
-	private void getLoginStatus(JSONArray args, CallbackContext callbackContext) throws JSONException {
-		Session session = Session.getActiveSession();
-		
-		if (session == null) {	
-			Session tempSession = new Session.Builder(cordova.getActivity())
-				.setApplicationId(this.appId)
-				.build();
-			
-			if (tempSession.getState() == SessionState.CREATED_TOKEN_LOADED) {
-				session = tempSession;
-				Session.setActiveSession(session);
-				session.openForRead(null);
-			}
-		}
-		
-		if (session == null) {
-			callbackContext.success(new JSONObject().put("status", "unknown"));
-		} else {		
-			callbackContext.success(buildAuthorizationResponse(session));
-		}
-	}
-*/
 	private void login(JSONArray args, CallbackContext callbackContext) throws JSONException {
 		Session session = Session.getActiveSession();		
 		
@@ -118,28 +96,39 @@ public class FacebookPlugin extends CordovaPlugin {
 		
 		final CallbackContext callback = callbackContext;
 		
-		OpenRequest openRequest = new OpenRequest(cordova.getActivity());
-		openRequest.setPermissions("email"); // TODO add permissions from args
-		openRequest.setCallback(new StatusCallback() {
-			@Override
-			public void call(Session session, SessionState state,
-					Exception exception) {
-				Log.d(TAG, "In status callback open for read " + state);				
-				
-				if (state == SessionState.OPENING) {
-					return;
-				}
-				
-				try {
-					JSONObject response = buildAuthorizationResponse(session);
+		List<String> permissions = new ArrayList<String>();
+		
+		permissions.add("basic_info");
+		JSONArray argumentPermissions = args.getJSONArray(0);
+		
+		for (int i = 0; i < argumentPermissions.length(); i++) {
+			permissions.add(argumentPermissions.getString(i));
+		}
+		
+		OpenRequest openRequest = new OpenRequest(cordova.getActivity())
+			.setPermissions(permissions)
+			.setCallback(new StatusCallback() {
+				@Override
+				public void call(Session session, SessionState state,
+						Exception exception) {
+					Log.d(TAG, "In status callback open for read " + state);				
 					
-					callback.success(response);
-				} catch (JSONException e) {
-					Log.e(TAG, "JSONException", e);
-					callback.error(e.toString());
-				}
-			}			
-		});
+					if (state == SessionState.OPENING) {
+						return;
+					}
+					
+					session.removeCallback(this);
+					
+					try {
+						JSONObject response = buildAuthorizationResponse(session);
+						
+						callback.success(response);
+					} catch (JSONException e) {
+						Log.e(TAG, "JSONException", e);
+						callback.error(e.toString());
+					}
+				}			
+			});
 		
 		cordova.setActivityResultCallback(this);
 		
@@ -147,15 +136,14 @@ public class FacebookPlugin extends CordovaPlugin {
 	}
 	
 	private JSONObject buildAuthorizationResponse(Session session) throws JSONException {
-		boolean connected = session.getPermissions().contains("email");
-		
 		JSONObject response = new JSONObject();
-		response.put("status", connected ? "connected" : "not_authorized");
 		
-		if (connected) {
-			response.put("authResponse", 
-					new JSONObject().put("accessToken", session.getAccessToken())
-						.put("expirationDate", session.getExpirationDate()));
+		if (session.getState().isOpened()) {
+			response.put("status", "connected");
+		} else if (session.getState() == SessionState.CLOSED_LOGIN_FAILED) {
+			response.put("status", "not_authorized");
+		} else {
+			response.put("status", "unknown");
 		}
 		
 		return response;
@@ -163,8 +151,6 @@ public class FacebookPlugin extends CordovaPlugin {
 	
 
 	private void query(JSONArray args, CallbackContext callbackContext) throws JSONException {
-	    Log.d(TAG, "In query: " + args.getString(0));
-
 	    Session session = Session.getActiveSession();
 
         if (session == null) {
@@ -185,7 +171,59 @@ public class FacebookPlugin extends CordovaPlugin {
             callbackContext.error("login_required");
             return;
         }
+        
+        if (!hasPermissions(asStringList(args.getJSONArray(2)))) {
+        	requestPermissionsThenExecuteQuery(args, callbackContext);
+        } else {
+        	executeQuery(args, callbackContext);
+        }
+	}
+	
+	private boolean hasPermissions(List<String> permissions) {
+		List<String> sessionPermissions = Session.getActiveSession().getPermissions();
+		
+		for (String permission : permissions) {
+			if (!sessionPermissions.contains(permission)) {
+				return false;
+			}
+		}
+		
+		return true;
+	}
+	
+	private void requestPermissionsThenExecuteQuery(final JSONArray args, final CallbackContext callbackContext) throws JSONException {
+		final List<String> permissions = asStringList(args.getJSONArray(2));
+		
+		Session.NewPermissionsRequest permissionsRequest 
+			= new Session.NewPermissionsRequest(cordova.getActivity(), permissions);
+		
+		permissionsRequest.setCallback(new StatusCallback() {
+			@Override
+			public void call(Session session, SessionState state,
+					Exception exception) {
+				try {
+					Log.d(TAG, "In status callback for request permissions");	
+					
+					session.removeCallback(this);
+					
+					if (!hasPermissions(permissions)) {
+						callbackContext.error("not_authorized");
+					} else {
+						executeQuery(args, callbackContext);
+					}
+				} catch (Exception e) {
+					Log.e(TAG, "Error executing action", e);
+					callbackContext.error(e.toString());
+				}				
+			}			
+		});
+		        	
+		Session.getActiveSession().requestNewReadPermissions(permissionsRequest);		
+	}
 
+
+	
+	private void executeQuery(JSONArray args, CallbackContext callbackContext) throws JSONException {
         Log.d(TAG, "executing query: " + args.getString(0));
 
 		Request request = new Request(Session.getActiveSession(), args.getString(0));
@@ -197,6 +235,16 @@ public class FacebookPlugin extends CordovaPlugin {
 		} else {
 			callbackContext.success(response.getGraphObject().getInnerJSONObject());
 		}
+	}
+	
+	private List<String> asStringList(JSONArray array) throws JSONException {
+		List<String> list = new ArrayList<String>(array.length());
+		
+		for (int i = 0; i < array.length(); i++) {
+			list.add(array.getString(i));
+		}
+		
+		return list;
 	}
 	
 	protected void logout(CallbackContext callbackContext) {
