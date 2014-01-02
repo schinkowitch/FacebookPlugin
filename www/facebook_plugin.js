@@ -1,43 +1,48 @@
 
-var FB = (function () {
-    var that = this,
-        initialized = false;
-
+var Facebook = (function () {
     return {
-        init: function (params) {
+        init: function (appId, callback) {
             console.log("In init");
 
             cordova.exec(function () {
                     console.log("FB initialized");
-                    that.initialized = true;
+                    callback();
                 },
                 function (error) {
                     console.error(error);
+                    callback(error);
                 },
                 "Facebook",
                 "init",
-                [params.appId, params.status === true]
+                [appId]
             );
         },
-        getLoginStatus: function (callback, force) {
+        query: function (path, params, permissions, callback) {
+            console.log("Making query: " + path);
+
             cordova.exec(function (response) {
-                    console.log("FB getLoginStatus success");
-                    callback(response)
+                    console.log("query success");
+                    callback(null, response);
                 },
                 function (error) {
-                    console.log("getLoginStatus error");
+                    console.log("query error");
                     console.error(error);
-                    callback({status: "error", error: error});
+                    if (error === "login_required") {
+                        callback({loginRequired: true});
+                    } else {
+                        callback(error);
+                    }
                 },
                 "Facebook",
-                "getLoginStatus",
-                []
-            );
+                "query",
+                [path, params, permissions]);
         },
-        login: function (callback, options) {
+        login: function (permissions, callback) {
+            console.log("In login");
+
             cordova.exec(function (response) {
-                    console.log("FB login success");
-                    callback(response)
+                    console.log("login success");
+                    callback(null, response);
                 },
                 function (error) {
                     console.log("login error");
@@ -46,39 +51,17 @@ var FB = (function () {
                 },
                 "Facebook",
                 "login",
-                []
-            );
-        },
-        api: function (path, method, params, callback) {
-            console.log("Making api call: " + path);
-
-            if (typeof method === "function") {
-                callback = method;
-                method = "GET";
-            }
-
-            cordova.exec(function (response) {
-                    console.log("api success");
-                    callback(response);
-                },
-                function (error) {
-                    console.log("api error");
-                    console.error(error);
-                    callback({status: "error", error: error});
-                },
-                "Facebook",
-                "api",
-                [path, method, params]);
+                [permissions]);
         },
         logout: function (callback) {
             cordova.exec(function () {
                     console.log("FB logout success");
-                    callback({status: "success"});
+                    callback(null, {status: "success"});
                 },
                 function (error) {
                     console.log("FB logout error");
                     console.error(error);
-                    callback({status: "error", error: error});
+                    callback(error);
                 },
                 "Facebook",
                 "logout",
@@ -88,4 +71,4 @@ var FB = (function () {
     }
 }());
 
-module.exports = FB;
+module.exports = Facebook;

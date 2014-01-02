@@ -1,13 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
     <plugin xmlns="http://apache.org/cordova/ns/plugins/1.0"
             id="com.schinkowitch.cordova.facebook" version="0.1.0">
+        <engines>
+    		<engine name="cordova" version=">=3.1.0" />  		
+		</engines>    
         <name>Facebook</name>
         <description>Facebook Plugin</description>
         <license>Apache 2.0</license>
         <keywords>cordova,facebook</keywords>
         <repo>https://github.com/schinkowitch/FacebookPlugin.git</repo>
-        <js-module src="www/facebook_plugin.js" name="FB">
-            <clobbers target="FB" />
+        <js-module src="www/facebook_plugin.js" name="Facebook">
+            <clobbers target="Facebook" />
         </js-module>
         <!-- android -->
 	    <platform name="android">
@@ -19,13 +22,13 @@
 
         	<source-file src="src/android/FacebookPlugin.java" target-dir="src/com/schinkowitch/cordova/facebook" />
     	</platform>
-        <!--platform name="ios">
+        <platform name="ios">
             <config-file target="config.xml" parent="/*">
-                <feature name="Device">
-                    <param name="ios-package" value="CDVDevice"/>
+                <feature name="Facebook">
+                    <param name="ios-package" value="CDVFacebookPlugin"/>
                 </feature>
             </config-file>
-            <header-file src="src/ios/CDVDevice.h" />
-            <source-file src="src/ios/CDVDevice.m" />
-        </platform-->
+         	<header-file src="src/ios/CDVFacebookPlugin.h" />
+            <source-file src="src/ios/CDVFacebookPlugin.m" />
+        </platform>
     </plugin>

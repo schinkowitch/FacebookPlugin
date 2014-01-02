@@ -21,7 +21,7 @@ import com.facebook.SessionState;
 
 public class FacebookPlugin extends CordovaPlugin {
 	private static final String TAG = FacebookPlugin.class.getSimpleName();
-	private static final List<String> ACTIONS = Arrays.asList("init", "getLoginStatus", "login", "api", "logout");
+	private static final List<String> ACTIONS = Arrays.asList("init", "login", "query", "logout");
 	
 	private String appId;
 	
@@ -44,12 +44,10 @@ public class FacebookPlugin extends CordovaPlugin {
 				try {			
 					if ("init".equals(action)) {
 						init(args, callbackContext);
-					} else if ("getLoginStatus".equals(action)) {
-					    getLoginStatus(args, callbackContext);
 					} else if ("login".equals(action)) {
 						login(args, callbackContext);
-					} else if ("api".equals(action)) {
-						callAPI(args, callbackContext);
+					} else if ("query".equals(action)) {
+						query(args, callbackContext);
 					} else if ("logout".equals(action)) {
 						logout(callbackContext);
 					} else {
@@ -64,26 +62,19 @@ public class FacebookPlugin extends CordovaPlugin {
 	}
 
 	private void init(JSONArray args, CallbackContext callbackContext) {
+	    Log.d(TAG, "In init");
 		try {
 			this.appId = args.getString(0);
 		} catch (JSONException e) {
-			callbackContext.error("Error getting facebook app ID");
+			throw new RuntimeException("Error getting appId", e);
 		}
-		
-		try {
-			boolean status = args.getBoolean(1);
-			
-			if (status) {
-				// TODO: getLoginStatus
-			}
-		} catch (JSONException e) {
-			callbackContext.error("Error status arg");
-		}
-		
+
+		Log.d(TAG, "Initialized with appId: " + this.appId);
+
 		callbackContext.success();
 	}
-	
 
+/*
 	private void getLoginStatus(JSONArray args, CallbackContext callbackContext) throws JSONException {
 		Session session = Session.getActiveSession();
 		
@@ -105,7 +96,7 @@ public class FacebookPlugin extends CordovaPlugin {
 			callbackContext.success(buildAuthorizationResponse(session));
 		}
 	}
-
+*/
 	private void login(JSONArray args, CallbackContext callbackContext) throws JSONException {
 		Session session = Session.getActiveSession();		
 		
@@ -153,7 +144,6 @@ public class FacebookPlugin extends CordovaPlugin {
 		cordova.setActivityResultCallback(this);
 		
 		session.openForRead(openRequest);
-		
 	}
 	
 	private JSONObject buildAuthorizationResponse(Session session) throws JSONException {
@@ -172,7 +162,32 @@ public class FacebookPlugin extends CordovaPlugin {
 	}
 	
 
-	private void callAPI(JSONArray args, CallbackContext callbackContext) throws JSONException {
+	private void query(JSONArray args, CallbackContext callbackContext) throws JSONException {
+	    Log.d(TAG, "In query: " + args.getString(0));
+
+	    Session session = Session.getActiveSession();
+
+        if (session == null) {
+            Log.d(TAG, "building session");
+            Session tempSession = new Session.Builder(cordova.getActivity())
+                .setApplicationId(this.appId)
+                .build();
+
+            if (tempSession.getState() == SessionState.CREATED_TOKEN_LOADED) {
+                Log.d(TAG, "opening session");
+                session = tempSession;
+                Session.setActiveSession(session);
+                session.openForRead(null);
+            }
+        }
+
+        if (session == null || !session.getState().isOpened()) {
+            callbackContext.error("login_required");
+            return;
+        }
+
+        Log.d(TAG, "executing query: " + args.getString(0));
+
 		Request request = new Request(Session.getActiveSession(), args.getString(0));
 		
 		Response response = request.executeAndWait();
