@@ -22,19 +22,20 @@ import com.facebook.SessionState;
 
 public class FacebookPlugin extends CordovaPlugin {
 	private static final String TAG = FacebookPlugin.class.getSimpleName();
-	private static final List<String> ACTIONS = Arrays.asList("init", "login", "query", "logout");
+	private static final List<String> ACTIONS = Arrays.asList("init", "login", "getPermissions", "requestReadPermissions", "query", "logout");
 	
 	private String appId;
 	
 	@Override
 	public boolean execute(String action, JSONArray args, CallbackContext callbackContext) {
 		if (!ACTIONS.contains(action)) {
+			Log.e(TAG, "Invalid action: " + action);
 			return false;
 		}
 		
 		Runnable task = getTask(action, args, callbackContext);
 		
-		cordova.getThreadPool().execute(task);
+		super.cordova.getThreadPool().execute(task);
 		
 		return true;
 	}	
@@ -47,6 +48,10 @@ public class FacebookPlugin extends CordovaPlugin {
 						init(args, callbackContext);
 					} else if ("login".equals(action)) {
 						login(args, callbackContext);
+					} else if ("getPermissions".equals(action)) {
+						getPermissions(callbackContext);
+					} else if ("requestReadPermissions".equals(action)) {
+						requestReadPermissions(args, callbackContext);
 					} else if ("query".equals(action)) {
 						query(args, callbackContext);
 					} else if ("logout".equals(action)) {
@@ -63,12 +68,13 @@ public class FacebookPlugin extends CordovaPlugin {
 	}
 
 	private void init(JSONArray args, CallbackContext callbackContext) {
-	    Log.d(TAG, "In init");
 		try {
 			this.appId = args.getString(0);
 		} catch (JSONException e) {
 			throw new RuntimeException("Error getting appId", e);
 		}
+		
+		super.cordova.setActivityResultCallback(this);
 
 		Log.d(TAG, "Initialized with appId: " + this.appId);
 
@@ -149,50 +155,45 @@ public class FacebookPlugin extends CordovaPlugin {
 		return response;
 	}
 	
-
-	private void query(JSONArray args, CallbackContext callbackContext) throws JSONException {
+	private void getPermissions(CallbackContext callbackContext) throws JSONException {
+		Session session = getSession();
+		
+		if (!session.getState().isOpened()) {
+			callbackContext.success("login_required");
+			return;
+		}
+		Log.d(TAG, "Permissions: " + Arrays.toString(session.getPermissions().toArray()));
+		JSONObject response = new JSONObject();
+		
+		for (String permission : session.getPermissions()) {
+			response.put(permission, 1);
+		}
+		
+		callbackContext.success(response);
+	}
+	
+	private Session getSession() {
 	    Session session = Session.getActiveSession();
 
-        if (session == null) {
+        if (session == null || session.getState().isClosed()) {
             Log.d(TAG, "building session");
-            Session tempSession = new Session.Builder(cordova.getActivity())
+            session = new Session.Builder(cordova.getActivity())
                 .setApplicationId(this.appId)
                 .build();
 
-            if (tempSession.getState() == SessionState.CREATED_TOKEN_LOADED) {
+            if (session.getState() == SessionState.CREATED_TOKEN_LOADED) {
                 Log.d(TAG, "opening session");
-                session = tempSession;
-                Session.setActiveSession(session);
                 session.openForRead(null);
             }
+            
+            Session.setActiveSession(session);
         }
+		
+        return session;
+	}
 
-        if (session == null || !session.getState().isOpened()) {
-            callbackContext.error("login_required");
-            return;
-        }
-        
-        if (!hasPermissions(asStringList(args.getJSONArray(2)))) {
-        	requestPermissionsThenExecuteQuery(args, callbackContext);
-        } else {
-        	executeQuery(args, callbackContext);
-        }
-	}
-	
-	private boolean hasPermissions(List<String> permissions) {
-		List<String> sessionPermissions = Session.getActiveSession().getPermissions();
-		
-		for (String permission : permissions) {
-			if (!sessionPermissions.contains(permission)) {
-				return false;
-			}
-		}
-		
-		return true;
-	}
-	
-	private void requestPermissionsThenExecuteQuery(final JSONArray args, final CallbackContext callbackContext) throws JSONException {
-		final List<String> permissions = asStringList(args.getJSONArray(2));
+	private void requestReadPermissions(JSONArray args, final CallbackContext callbackContext) throws JSONException {
+		final List<String> permissions = asStringList(args.getJSONArray(0));
 		
 		Session.NewPermissionsRequest permissionsRequest 
 			= new Session.NewPermissionsRequest(cordova.getActivity(), permissions);
@@ -202,14 +203,12 @@ public class FacebookPlugin extends CordovaPlugin {
 			public void call(Session session, SessionState state,
 					Exception exception) {
 				try {
-					Log.d(TAG, "In status callback for request permissions");	
-					
 					session.removeCallback(this);
 					
-					if (!hasPermissions(permissions)) {
-						callbackContext.error("not_authorized");
+					if (missingPermission(permissions)) {
+						callbackContext.success("not_authorized");
 					} else {
-						executeQuery(args, callbackContext);
+						callbackContext.success("authorized");
 					}
 				} catch (Exception e) {
 					Log.e(TAG, "Error executing action", e);
@@ -218,10 +217,40 @@ public class FacebookPlugin extends CordovaPlugin {
 			}			
 		});
 		        	
-		Session.getActiveSession().requestNewReadPermissions(permissionsRequest);		
+		Session.getActiveSession().requestNewReadPermissions(permissionsRequest);			
 	}
-
-
+	
+	private List<String> asStringList(JSONArray array) throws JSONException {
+		List<String> list = new ArrayList<String>(array.length());
+		
+		for (int i = 0; i < array.length(); i++) {
+			list.add(array.getString(i));
+		}
+		
+		return list;
+	}
+	
+	private boolean missingPermission(List<String> permissions) {
+		List<String> sessionPermissions = getSession().getPermissions();
+		for (String permission : permissions) {
+			if (!sessionPermissions.contains(permission)) {
+				return true;
+			}
+		}
+		
+		return false;
+	}
+	
+	private void query(JSONArray args, CallbackContext callbackContext) throws JSONException {
+		Session session = getSession();
+		
+        if (session == null || !session.getState().isOpened()) {
+            callbackContext.error("login_required");
+            return;
+        }
+        
+        executeQuery(args, callbackContext);
+	}	
 	
 	private void executeQuery(JSONArray args, CallbackContext callbackContext) throws JSONException {
         Log.d(TAG, "executing query: " + args.getString(0));
@@ -235,16 +264,6 @@ public class FacebookPlugin extends CordovaPlugin {
 		} else {
 			callbackContext.success(response.getGraphObject().getInnerJSONObject());
 		}
-	}
-	
-	private List<String> asStringList(JSONArray array) throws JSONException {
-		List<String> list = new ArrayList<String>(array.length());
-		
-		for (int i = 0; i < array.length(); i++) {
-			list.add(array.getString(i));
-		}
-		
-		return list;
 	}
 	
 	protected void logout(CallbackContext callbackContext) {
