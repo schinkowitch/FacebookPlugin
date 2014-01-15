@@ -23,7 +23,6 @@
 }
 
 
-
 - (void)init:(CDVInvokedUrlCommand*)command
 {
     CDVPluginResult* pluginResult = nil;
@@ -37,6 +36,32 @@
         
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
     }
+    
+    NSLog(@"Initialized with app ID %@", appId);
+    
+    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+}
+
+- (void)getPermissions:(CDVInvokedUrlCommand*)command
+{
+    CDVPluginResult* pluginResult = nil;
+    
+    if (!FBSession.activeSession.isOpen) {
+        [FBSession openActiveSessionWithAllowLoginUI:NO];
+    }
+    
+    if (!FBSession.activeSession.isOpen) {
+        NSLog(@"Login required");
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"login_required"];
+    } else {
+        NSMutableDictionary* permissions = [[NSMutableDictionary alloc] init];
+        
+        for (id sessionPermission in FBSession.activeSession.permissions) {
+            [permissions setObject:[NSNumber numberWithInt:1] forKey:sessionPermission];
+        }
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:permissions];
+    }
+    
     
     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
 }
@@ -61,7 +86,17 @@
     
 }
 
-- (void)getLoginStatus:(CDVInvokedUrlCommand*)command;
+- (void)sendError:(CDVInvokedUrlCommand*)command error:(NSError*) error info:(NSString*) info
+{
+    CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:error.description];
+    
+    NSLog(@"error %@: %@", info, error.description);
+    
+    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+
+}
+
+- (void)getLoginStatus:(CDVInvokedUrlCommand*)command
 {
     FBSession *session = FBSession.activeSession;
     
@@ -81,19 +116,77 @@
     [self sendLoginStatus:command session:session];
 }
 
-- (BOOL) hasAllPermissions:(NSArray*)permissions; {
+- (BOOL) missingPermission:(NSArray*)permissions
+{
     NSArray* sessionPermmisions = FBSession.activeSession.permissions;
     
     for (NSString* permission in permissions) {
         if (![sessionPermmisions containsObject:permission]) {
-            return NO;
+            return YES;
         }
     }
     
-    return YES;
+    return NO;
 }
 
-- (void) executeQuery:(CDVInvokedUrlCommand*)command;
+- (void)requestReadPermissions:(CDVInvokedUrlCommand*)command
+{
+    NSArray* permissions = [command.arguments objectAtIndex:0];
+    
+    [FBSession.activeSession requestNewReadPermissions:permissions completionHandler:^(FBSession *session, NSError *error) {
+        NSString* status = nil;
+        
+        if (error) {
+            [self sendError:command error:error info:@"query"];
+            return;
+        }
+        
+        if ([self missingPermission:permissions]) {
+            status = @"not_authorized";
+        } else {
+            status = @"authorized";
+        }
+        
+        [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus: CDVCommandStatus_OK messageAsString:status]
+                                    callbackId:command.callbackId];
+    }];
+}
+
+- (void)requestPublishPermissions:(CDVInvokedUrlCommand*)command
+{
+    NSArray* permissions = [command.arguments objectAtIndex:0];
+    NSString* audienceArg = [command.arguments objectAtIndex:1];
+    int audience = FBSessionDefaultAudienceNone;
+    
+    if ([@"friends" isEqualToString:audienceArg]) {
+        audience = FBSessionDefaultAudienceFriends;
+    } else if ([@"only_me" isEqualToString:audienceArg]) {
+        audience = FBSessionDefaultAudienceOnlyMe;
+    } else if ([@"everyone" isEqualToString:audienceArg]) {
+        audience = FBSessionDefaultAudienceEveryone;
+    }
+    
+    [FBSession.activeSession requestNewPublishPermissions:permissions defaultAudience:audience
+                                        completionHandler:^(FBSession *session, NSError *error) {
+        NSString* status = nil;
+        
+        if (error) {
+            [self sendError:command error:error info:@"query"];
+            return;
+        }
+        
+        if ([self missingPermission:permissions]) {
+            status = @"not_authorized";
+        } else {
+            status = @"authorized";
+        }
+        
+        [self.commandDelegate sendPluginResult:[CDVPluginResult resultWithStatus: CDVCommandStatus_OK messageAsString:status]
+                                    callbackId:command.callbackId];
+    }];
+}
+
+- (void) query:(CDVInvokedUrlCommand*)command;
 {
     NSLog(@"Will execute query %@", [command.arguments objectAtIndex:0]);
     
@@ -102,9 +195,7 @@
                               CDVPluginResult* pluginResult = nil;
                               
                               if (error) {
-                                  NSLog(@"error executing query '%@': %@", [command.arguments objectAtIndex:0], error.description);
-                                  pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:error.description];
-                                  [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+                                  [self sendError:command error:error info:@"query"];
                                   return;
                               }
                               
@@ -113,45 +204,29 @@
                           }];
 }
 
-- (void) query:(CDVInvokedUrlCommand*)command;
+- (void)publishAction:(CDVInvokedUrlCommand*)command
 {
-    if (!FBSession.activeSession.isOpen) {
-        [FBSession openActiveSessionWithAllowLoginUI:NO];
-    }
-    
-    if (!FBSession.activeSession.isOpen) {
-        NSLog(@"Login required");
-        CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"login_required"];
-        [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
-        return;
-    }
-    
-    NSArray* permissions = [command.arguments objectAtIndex:2];
-    
-    if (![self hasAllPermissions:permissions]) {
-        [FBSession.activeSession requestNewReadPermissions:permissions completionHandler:
-            ^(FBSession *session, NSError *error) {
-                if (error) {
-                    CDVPluginResult* pluginResult = nil;
-                     
-                    NSLog(@"error requesting new permissions '%@': %@", [command.arguments objectAtIndex:0], error.description);
-                    pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:error.description];
-                    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
-                    return;
-                }
-                 
-                if (![self hasAllPermissions:permissions]) {
-                    NSLog(@"Permissions not granted");
-                    CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"permission_denied"];
-                    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
-                    return;
-                }
-                 
-                [self executeQuery:command];
-            }];
-    }
-    
-    [self executeQuery:command];
+    NSDictionary* actionParams = [command.arguments objectAtIndex:0];
+    NSString* path = [NSString stringWithFormat:@"/me/%@", [actionParams objectForKey:@"action"]];
+    NSMutableDictionary<FBOpenGraphAction>* action = [FBGraphObject openGraphActionForPost];
+
+    action[@"message"] = actionParams[@"message"];
+    action[@"place"] = actionParams[@"place"];
+    action[@"fb:explicitly_shared"] = actionParams[@"explicitlyShared"];
+    action[[actionParams objectForKey:@"objectType"]] = actionParams[@"objectId"];
+
+    [FBRequestConnection startForPostWithGraphPath:path graphObject:action
+                                 completionHandler:^(FBRequestConnection *connection, id result, NSError *error) {
+                                     CDVPluginResult* pluginResult = nil;
+                                     
+                                     if (error) {
+                                         [self sendError:command error:error info:@"publishAction"];
+                                         return;
+                                     }
+                                     
+                                     pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:result];
+                                     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+                                 }];
 }
 
 - (void)login:(CDVInvokedUrlCommand*)command;

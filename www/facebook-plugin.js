@@ -1,4 +1,3 @@
-cordova.define("com.schinkowitch.cordova.facebook.Facebook", function(require, exports, module) {
 var Facebook = (function () {
     var getMissingPermissions = function (requestedPermissions, grantedPermissionsObject) {
         var missingPermissions = [];
@@ -32,6 +31,18 @@ var Facebook = (function () {
             "Facebook",
             "query",
             [path, params]);
+    },
+    doPublishAction = function (action, callback) {
+    	cordova.exec(function (response) {
+                console.log("publish succeeded");
+                callback(null, response);
+            },
+            function (error) {
+                handleError(error, "publish", callback);
+            },
+            "Facebook",
+            "publishAction",
+            [action]);
     };
 
     return {
@@ -78,6 +89,42 @@ var Facebook = (function () {
                 },
                 "Facebook", "getPermissions", [permissions]);
         },
+        publishAction: function (action, audience, callback) {
+        	var permissions = ["publish_actions"];
+        	
+        	cordova.exec(function (response) {
+                    var missingPermissions;
+
+                    if (response === "login_required") {
+                        callback({loginRequired: true});
+                        return;
+                    }
+
+                    missingPermissions = getMissingPermissions(permissions, response);
+
+                    if (missingPermissions.length > 0) {
+                        cordova.exec(function (response) {
+                                if (response === "not_authorized") {
+                                    callback({notAuthorized: true});
+                                    return;
+                                }
+
+                                doPublishAction(action, callback);
+                            },
+                            function (error) {
+                                handleError(error, "requestWritePermissions", callback);
+                            },
+                            "Facebook", "requestWritePermissions", [permissions, audience]);
+                        return;
+                    }
+
+                    doPublishAction(action, callback);
+                },
+                function (error) {
+                    handleError(error, "getPermissions", callback);
+                },
+                "Facebook", "getPermissions", [permissions]);
+        },
         login: function (permissions, callback) {
             cordova.exec(function (response) {
                     callback(null, response);
@@ -100,4 +147,4 @@ var Facebook = (function () {
     }
 }());
 
-module.exports = Facebook;});
+module.exports = Facebook;

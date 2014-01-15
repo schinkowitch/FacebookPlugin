@@ -18,11 +18,14 @@ import com.facebook.Response;
 import com.facebook.Session;
 import com.facebook.Session.OpenRequest;
 import com.facebook.Session.StatusCallback;
+import com.facebook.SessionDefaultAudience;
 import com.facebook.SessionState;
+import com.facebook.model.OpenGraphAction;
 
 public class FacebookPlugin extends CordovaPlugin {
 	private static final String TAG = FacebookPlugin.class.getSimpleName();
-	private static final List<String> ACTIONS = Arrays.asList("init", "login", "getPermissions", "requestReadPermissions", "query", "logout");
+	private static final List<String> ACTIONS
+		= Arrays.asList("init", "login", "getPermissions", "requestReadPermissions", "requestPublishPermissions", "query", "publishAction", "logout");
 	
 	private String appId;
 	
@@ -52,8 +55,12 @@ public class FacebookPlugin extends CordovaPlugin {
 						getPermissions(callbackContext);
 					} else if ("requestReadPermissions".equals(action)) {
 						requestReadPermissions(args, callbackContext);
+					} else if ("requestPublishPermissions".equals(action)) {
+						requestPublishPermissions(args, callbackContext);
 					} else if ("query".equals(action)) {
 						query(args, callbackContext);
+					} else if ("publishAction".equals(action)) {
+						publish(args, callbackContext);
 					} else if ("logout".equals(action)) {
 						logout(callbackContext);
 					} else {
@@ -192,7 +199,32 @@ public class FacebookPlugin extends CordovaPlugin {
         return session;
 	}
 
-	private void requestReadPermissions(JSONArray args, final CallbackContext callbackContext) throws JSONException {
+	private void requestReadPermissions(JSONArray args, CallbackContext callbackContext) throws JSONException {
+		Session.NewPermissionsRequest permissionsRequest = buildPermissionsRequest(args, callbackContext);
+		        	
+		Session.getActiveSession().requestNewReadPermissions(permissionsRequest);			
+	}
+	
+	private void requestPublishPermissions(JSONArray args, final CallbackContext callbackContext) throws JSONException {
+		Session.NewPermissionsRequest permissionsRequest = buildPermissionsRequest(args, callbackContext);
+		
+		String audienceArg = args.getString(1);
+		SessionDefaultAudience audience = SessionDefaultAudience.NONE;
+		
+		if ("friends".equals(audienceArg)) {
+			audience = SessionDefaultAudience.FRIENDS;
+		} else if ("only_me".equals(audienceArg)) {
+			audience = SessionDefaultAudience.ONLY_ME;
+		}  else if ("everyone".equals(audienceArg)) {
+			audience = SessionDefaultAudience.EVERYONE;
+		}
+		
+		permissionsRequest.setDefaultAudience(audience);
+    	
+		Session.getActiveSession().requestNewPublishPermissions(permissionsRequest);			
+	}
+	
+	private Session.NewPermissionsRequest buildPermissionsRequest(JSONArray args, final CallbackContext callbackContext) throws JSONException {
 		final List<String> permissions = asStringList(args.getJSONArray(0));
 		
 		Session.NewPermissionsRequest permissionsRequest 
@@ -216,10 +248,10 @@ public class FacebookPlugin extends CordovaPlugin {
 				}				
 			}			
 		});
-		        	
-		Session.getActiveSession().requestNewReadPermissions(permissionsRequest);			
+		
+		return permissionsRequest;
 	}
-	
+		
 	private List<String> asStringList(JSONArray array) throws JSONException {
 		List<String> list = new ArrayList<String>(array.length());
 		
@@ -242,18 +274,7 @@ public class FacebookPlugin extends CordovaPlugin {
 	}
 	
 	private void query(JSONArray args, CallbackContext callbackContext) throws JSONException {
-		Session session = getSession();
-		
-        if (session == null || !session.getState().isOpened()) {
-            callbackContext.error("login_required");
-            return;
-        }
-        
-        executeQuery(args, callbackContext);
-	}	
-	
-	private void executeQuery(JSONArray args, CallbackContext callbackContext) throws JSONException {
-        Log.d(TAG, "executing query: " + args.getString(0));
+		Log.d(TAG, "executing query: " + args.getString(0));
 
 		Request request = new Request(Session.getActiveSession(), args.getString(0));
 		
@@ -266,6 +287,27 @@ public class FacebookPlugin extends CordovaPlugin {
 		}
 	}
 	
+	private void publish(JSONArray args, CallbackContext callbackContext) throws JSONException {
+		JSONObject actionParams = args.getJSONObject(0);
+		
+        OpenGraphAction action = OpenGraphAction.Factory.createForPost(actionParams.getString("action"));
+        
+        action.setMessage(actionParams.getString("message"));
+        action.setProperty("place", actionParams.getLong("place"));
+        action.setExplicitlyShared(actionParams.getBoolean("explicitlyShared"));
+        action.setProperty(actionParams.getString("objectType"), actionParams.getString("objectId"));
+        
+		Request request = Request.newPostOpenGraphActionRequest(Session.getActiveSession(), action, null);
+		
+		Response response = request.executeAndWait();
+		
+		if (response.getError() != null) {
+			callbackContext.error(response.getError().toString());
+		} else {
+			callbackContext.success(response.getGraphObject().getInnerJSONObject());
+		}
+	}
+
 	protected void logout(CallbackContext callbackContext) {
 		Session session = Session.getActiveSession();
 		
@@ -284,4 +326,3 @@ public class FacebookPlugin extends CordovaPlugin {
         Session.getActiveSession().onActivityResult(cordova.getActivity(), requestCode, resultCode, data);
     }
 }
- 

@@ -13,7 +13,15 @@
 
 - (void)init:(CDVInvokedUrlCommand*)command;
 
+- (void)getPermissions:(CDVInvokedUrlCommand*)command;
+
+- (void)requestReadPermissions:(CDVInvokedUrlCommand*)command;
+
+- (void)requestPublishPermissions:(CDVInvokedUrlCommand*)command;
+
 - (void)query:(CDVInvokedUrlCommand*)command;
+
+- (void)publishAction:(CDVInvokedUrlCommand*)command;
 
 - (void)login:(CDVInvokedUrlCommand*)command;
 

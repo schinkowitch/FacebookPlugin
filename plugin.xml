@@ -9,7 +9,7 @@
         <license>Apache 2.0</license>
         <keywords>cordova,facebook</keywords>
         <repo>https://github.com/schinkowitch/FacebookPlugin.git</repo>
-        <js-module src="www/facebook_plugin.js" name="Facebook">
+        <js-module src="www/facebook-plugin.js" name="Facebook">
             <clobbers target="Facebook" />
         </js-module>
         <!-- android -->
