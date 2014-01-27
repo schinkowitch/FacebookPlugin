@@ -1,6 +1,7 @@
 package com.schinkowitch.cordova.facebook;
 
 import java.util.Arrays;
+import java.util.Iterator;
 import java.util.List;
 import java.util.ArrayList;
 
@@ -14,6 +15,7 @@ import android.content.Intent;
 import android.util.Log;
 
 import com.facebook.Request;
+import com.facebook.RequestBatch;
 import com.facebook.Response;
 import com.facebook.Session;
 import com.facebook.Session.OpenRequest;
@@ -21,6 +23,7 @@ import com.facebook.Session.StatusCallback;
 import com.facebook.SessionDefaultAudience;
 import com.facebook.SessionState;
 import com.facebook.model.OpenGraphAction;
+import com.facebook.model.OpenGraphObject;
 
 public class FacebookPlugin extends CordovaPlugin {
 	private static final String TAG = FacebookPlugin.class.getSimpleName();
@@ -290,22 +293,87 @@ public class FacebookPlugin extends CordovaPlugin {
 	private void publish(JSONArray args, CallbackContext callbackContext) throws JSONException {
 		JSONObject actionParams = args.getJSONObject(0);
 		
-        OpenGraphAction action = OpenGraphAction.Factory.createForPost(actionParams.getString("action"));
-        
-        action.setMessage(actionParams.getString("message"));
-        action.setProperty("place", actionParams.getLong("place"));
-        action.setExplicitlyShared(actionParams.getBoolean("explicitlyShared"));
-        action.setProperty(actionParams.getString("objectType"), actionParams.getString("objectId"));
-        
-		Request request = Request.newPostOpenGraphActionRequest(Session.getActiveSession(), action, null);
-		
-		Response response = request.executeAndWait();
-		
-		if (response.getError() != null) {
-			callbackContext.error(response.getError().toString());
+		if (actionParams.has("object")) {
+			RequestBatch requestBatch = new RequestBatch();
+			
+			OpenGraphObject object = buildOpenGraphObject(actionParams);
+			
+			Request objectRequest = Request.newPostOpenGraphObjectRequest(Session.getActiveSession(), object, null);
+			objectRequest.setBatchEntryName("objectCreate");
+			
+	        OpenGraphAction action = OpenGraphAction.Factory.createForPost(actionParams.getString("action"));
+	        
+	        action.setMessage(actionParams.getString("message"));
+	        action.setProperty("place", actionParams.getLong("place"));
+	        action.setExplicitlyShared(actionParams.getBoolean("explicitlyShared"));
+	        action.setProperty(actionParams.getString("objectType"), "{result=objectCreate:$.id}");
+	        
+			Request request = Request.newPostOpenGraphActionRequest(Session.getActiveSession(), action, null);
+			request.setBatchEntryDependsOn("objectCreate");
+			
+			requestBatch.add(objectRequest);
+			requestBatch.add(request);
+			
+			List<Response> responses = requestBatch.executeAndWait();
+			Response lastResponse = null;
+			
+			for (Response response : responses) {
+				
+				if (response.getError() != null) {
+					callbackContext.error(response.getError().toString());
+					return;
+				}			
+				
+				lastResponse = response;
+			}
+			
+			callbackContext.success(lastResponse.getGraphObject().getInnerJSONObject());
 		} else {
-			callbackContext.success(response.getGraphObject().getInnerJSONObject());
+	        OpenGraphAction action = OpenGraphAction.Factory.createForPost(actionParams.getString("action"));
+	        
+	        action.setMessage(actionParams.getString("message"));
+	        action.setProperty("place", actionParams.getLong("place"));
+	        action.setExplicitlyShared(actionParams.getBoolean("explicitlyShared"));
+	        action.setProperty(actionParams.getString("objectType"), actionParams.getString("objectId"));
+	        
+			Request request = Request.newPostOpenGraphActionRequest(Session.getActiveSession(), action, null);
+			
+			Response response = request.executeAndWait();
+			
+			if (response.getError() != null) {
+				callbackContext.error(response.getError().toString());
+			} else {
+				callbackContext.success(response.getGraphObject().getInnerJSONObject());
+			}			
 		}
+	}
+
+	private OpenGraphObject buildOpenGraphObject(JSONObject actionParams)
+			throws JSONException {
+		JSONObject jsonObject = actionParams.getJSONObject("object");
+		
+		OpenGraphObject object = OpenGraphObject.Factory.createForPost(jsonObject.getString("type"));
+		object.setTitle(jsonObject.getString("title"));
+		object.setDescription(jsonObject.getString("description"));
+		
+		if (jsonObject.has("url")) {
+			object.setUrl(jsonObject.getString("url"));
+		}
+		
+		object.setImageUrls(Arrays.asList(jsonObject.getString("image")));
+		
+		JSONObject dataObject = jsonObject.getJSONObject("data");
+		
+		@SuppressWarnings("unchecked")
+		Iterator<String> keys = (Iterator<String>) dataObject.keys();
+		
+		while (keys.hasNext()) {
+			String key = keys.next();
+			
+			object.getData().setProperty(key, dataObject.get(key));
+		}
+		
+		return object;
 	}
 
 	protected void logout(CallbackContext callbackContext) {

@@ -31,12 +31,41 @@ var Facebook = (function () {
 
             return missingPermission;
         },
+        postObjectAndAction = function (action, callback) {
+            var objectType = action.object.type;
+
+            delete action.object.type;
+
+            console.log("Posting object", action.object);
+
+            FB.api("/me/objects/" + objectType,
+                "post",
+                {object: action.object},
+                function (response) {
+                    console.log("response post object", response);
+
+                    if (response.error) {
+                        callback(response.error);
+                        return;
+                    }
+
+                    action.objectId = response.id.toString();
+                    delete action.object;
+
+                    postAction(action, callback);
+                });
+        },
         postAction = function (action, callback) {
             var graphAction = {
                 message: action.message,
                 place: action.place,
                 "fb:explicitly_shared": action.explicitlyShared
             };
+
+            if (action.object) {
+                postObjectAndAction(action, callback);
+                return;
+            }
 
             graphAction[action.objectType] = action.objectId.toString();
 

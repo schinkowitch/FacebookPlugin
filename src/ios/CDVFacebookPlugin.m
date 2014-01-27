@@ -209,6 +209,11 @@
     NSDictionary* actionParams = [command.arguments objectAtIndex:0];
     NSString* path = [NSString stringWithFormat:@"/me/%@", [actionParams objectForKey:@"action"]];
     NSMutableDictionary<FBOpenGraphAction>* action = [FBGraphObject openGraphActionForPost];
+    
+    if (actionParams[@"object"] != nil) {
+        [self publishObjectAndAction:command actionParams:actionParams];
+        return;
+    }
 
     action[@"message"] = actionParams[@"message"];
     action[@"place"] = actionParams[@"place"];
@@ -227,6 +232,58 @@
                                      pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:result];
                                      [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
                                  }];
+}
+
+- (void)publishObjectAndAction:(CDVInvokedUrlCommand*)command actionParams:(NSDictionary*) actionParams
+{
+    NSLog(@"Will publish action and object");
+    FBRequestConnection* requestConnection = [[FBRequestConnection alloc] init];
+    
+    NSDictionary* object = actionParams[@"object"];
+    NSString* path = [NSString stringWithFormat:@"/me/%@", [actionParams objectForKey:@"action"]];
+    FBRequest* objectRequest = [FBRequest requestForPostOpenGraphObjectWithType: object[@"type"]
+                                                                          title: object[@"title"]
+                                                                          image: object[@"image"]
+                                                                            url: object[@"url"]
+                                                                    description: object[@"description"]
+                                                               objectProperties: object[@"data"]];
+    
+    
+    NSMutableDictionary<FBOpenGraphAction>* action = [FBGraphObject openGraphActionForPost];
+    action[@"message"] = actionParams[@"message"];
+    action[@"place"] = actionParams[@"place"];
+    action[@"fb:explicitly_shared"] = actionParams[@"explicitlyShared"];
+    action[[actionParams objectForKey:@"objectType"]] = @"{result=objectCreate:$.id}";
+    
+    FBRequest* actionRequest = [FBRequest requestForPostWithGraphPath:path graphObject:action];
+    NSMutableDictionary* batchParameters = [[NSMutableDictionary alloc] init];
+    batchParameters[@"depends_upon"] = @"objectCreate";
+    
+    [requestConnection addRequest:objectRequest
+                completionHandler:^(FBRequestConnection *connection, id result, NSError *error) {
+                                      if (error) {
+                                          [self sendError:command error:error info:@"publishObjectAndAction - object"];
+                                      }
+                                  }
+                   batchEntryName:@"objectCreate"
+    ];
+    
+    [requestConnection addRequest:actionRequest
+                completionHandler:^(FBRequestConnection *connection, id result, NSError *error) {
+                    CDVPluginResult* pluginResult = nil;
+                    
+                    if (error) {
+                        [self sendError:command error:error info:@"publishObjectAndAction - action"];
+                        return;
+                    }
+                    
+                    pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:result];
+                    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+                }
+                   batchParameters:batchParameters
+     ];
+    
+    [requestConnection start];
 }
 
 - (void)login:(CDVInvokedUrlCommand*)command;
