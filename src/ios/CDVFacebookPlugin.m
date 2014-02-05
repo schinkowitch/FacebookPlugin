@@ -291,6 +291,8 @@
     BOOL opened = NO;
 
     if (FBSession.activeSession.isOpen) {
+        NSLog(@"Session is open %d", FBSession.activeSession.state);
+
         [self sendLoginStatus:command session:FBSession.activeSession];
         return;
     }
@@ -303,6 +305,14 @@
     
     opened = [FBSession openActiveSessionWithReadPermissions: permissions allowLoginUI:YES completionHandler:
                     ^(FBSession *session, FBSessionState status, NSError *error) {
+                        if (error) {
+                            [self sendError:command error:error info:@"login"];
+                            return;
+                        }
+                        
+                        NSLog(@"Session now has state %d", FBSession.activeSession.state);
+                        
+                        
                         if (!session.isOpen && status != FBSessionStateClosedLoginFailed) {
                             return;
                         }
