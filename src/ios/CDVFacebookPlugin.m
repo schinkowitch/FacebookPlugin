@@ -286,7 +286,7 @@
     [requestConnection start];
 }
 
-- (void)login:(CDVInvokedUrlCommand*)command;
+- (void)login:(CDVInvokedUrlCommand*)command
 {
     BOOL opened = NO;
 
@@ -324,6 +324,24 @@
         NSLog(@"Session opened without UI: %d", FBSession.activeSession.state);
         [self sendLoginStatus:command session:FBSession.activeSession];
     }
+}
+
+- (void)getAccessToken:(CDVInvokedUrlCommand*)command
+{
+    FBSession* session = FBSession.activeSession;
+    NSDictionary* response = nil;
+    CDVPluginResult* result = nil;
+    
+    NSLog(@"Getting access token");
+    
+    if (session == nil || !session.isOpen) {
+        response = @{@"error": @"not_authorized"};
+    } else {
+        response = @{@"accessToken": session.accessTokenData.accessToken};
+    }
+    
+    result = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:response];
+    [self.commandDelegate sendPluginResult:result callbackId:command.callbackId];
 }
 
 - (void)logout:(CDVInvokedUrlCommand*)command;

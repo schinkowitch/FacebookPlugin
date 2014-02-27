@@ -25,5 +25,7 @@
 
 - (void)login:(CDVInvokedUrlCommand*)command;
 
+- (void)getAccessToken:(CDVInvokedUrlCommand*)command;
+
 - (void)logout:(CDVInvokedUrlCommand*)command;
 @end

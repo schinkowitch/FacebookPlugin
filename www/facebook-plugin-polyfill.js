@@ -1,6 +1,7 @@
 var Facebook = (function () {
     var my = {},
         _appId = null,
+        accessToken = null,
         initCallback,
         initFacebookUsingAppId = function () {
             if (typeof(FB) === "undefined") {
@@ -118,6 +119,7 @@ var Facebook = (function () {
     my.query = function (path, params, permissions, callback) {
         FB.getLoginStatus(function (response) {
             if (response.status === "connected") {
+                accessToken = response.authResponse.accessToken;
                 FB.api(path, function (response) {
                     callback(null, response);
                 });
@@ -135,6 +137,8 @@ var Facebook = (function () {
                 callback({loginRequired: true});
                 return;
             }
+
+            accessToken = response.authResponse.accessToken;
 
             FB.api("/me/permissions", function (response) {
                     console.log("permissions: ", response.data[0]);
@@ -175,8 +179,18 @@ var Facebook = (function () {
                 return;
             }
 
+            accessToken = response.authResponse.accessToken;
+
             callback(null, response);
         }, {scope: scope});
+    };
+
+    my.getAccessToken = function (callback) {
+        if (!accessToken) {
+            callback(null, {error: "not_authorized"});
+        } else {
+            callback(null, {accessToken: accessToken});
+        }
     };
 
     my.logout = function (callback) {

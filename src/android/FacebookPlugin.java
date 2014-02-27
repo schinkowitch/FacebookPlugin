@@ -28,7 +28,8 @@ import com.facebook.model.OpenGraphObject;
 public class FacebookPlugin extends CordovaPlugin {
 	private static final String TAG = FacebookPlugin.class.getSimpleName();
 	private static final List<String> ACTIONS
-		= Arrays.asList("init", "login", "getPermissions", "requestReadPermissions", "requestPublishPermissions", "query", "publishAction", "logout");
+		= Arrays.asList("init", "login", "getPermissions", "requestReadPermissions", "requestPublishPermissions", 
+				"query", "publishAction", "getAccessToken", "logout");
 	
 	private String appId;
 	
@@ -54,6 +55,8 @@ public class FacebookPlugin extends CordovaPlugin {
 						init(args, callbackContext);
 					} else if ("login".equals(action)) {
 						login(args, callbackContext);
+					} else if ("getAccessToken".equals(action)) {
+						getAccessToken(callbackContext);
 					} else if ("getPermissions".equals(action)) {
 						getPermissions(callbackContext);
 					} else if ("requestReadPermissions".equals(action)) {
@@ -374,6 +377,19 @@ public class FacebookPlugin extends CordovaPlugin {
 		}
 		
 		return object;
+	}
+	
+	private void getAccessToken(CallbackContext callbackContext) throws JSONException {
+		Session session = Session.getActiveSession();
+		JSONObject response = new JSONObject();
+		
+		if (session == null || !session.isOpened()) {
+			response.put("error", "not_authorized");			
+		} else {
+			response.put("accessToken", session.getAccessToken());
+		}
+		
+		callbackContext.success(response);
 	}
 
 	protected void logout(CallbackContext callbackContext) {

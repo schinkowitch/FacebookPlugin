@@ -130,9 +130,18 @@ var Facebook = (function () {
                     callback(null, response);
                 },
                 function (error) {
-                    handleError(error, "logout", callback);
+                    handleError(error, "login", callback);
                 },
                 "Facebook", "login", [permissions]);
+        },
+        getAccessToken: function (callback) {
+            cordova.exec(function (response) {
+                    callback(null, response);
+                },
+                function (error) {
+                    handleError(error, "getAccessToken", callback);
+                },
+                "Facebook", "getAccessToken", []);
         },
         logout: function (callback) {
             cordova.exec(function () {
